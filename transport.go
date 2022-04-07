@@ -130,6 +130,12 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	creq.Header.Add("Accept", acceptHeader) // We add to "Accept" header to avoid overwriting existing req headers.
 	reqBodyClosed = true                    // req.Body is assumed to be closed by the tr RoundTripper.
 	resp, err := t.tr.RoundTrip(creq)
+
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		// If we got a 401 Unauthorized response, we need to discard the bad token.
+		t.clearToken(token)
+	}
+
 	return resp, err
 }
 
@@ -208,6 +214,17 @@ func (t *Transport) refreshToken(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	return json.NewDecoder(resp.Body).Decode(&t.token)
+}
+
+func (t *Transport) clearToken(expectedToken string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Clear the token only if it matches the expected value.
+	// This is to prevent the token from being reset if it was refreshed by another routine.
+	if t.token != nil && t.token.Token == expectedToken {
+		t.token = nil
+	}
 }
 
 // GetReadWriter converts a body interface into an io.ReadWriter object.
